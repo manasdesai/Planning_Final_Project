@@ -23,9 +23,7 @@ install(
 
 
 install(PROGRAMS
-  # ${PROJECT_NAME}/slider_control.py
-  # ${PROJECT_NAME}/gemini_control1.py
-  # ${PROJECT_NAME}/forward_control.py
+  
   ${PROJECT_NAME}/control1.py
   ${PROJECT_NAME}/control2.py
   ${PROJECT_NAME}/control3.py
