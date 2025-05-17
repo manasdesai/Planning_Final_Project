@@ -12,7 +12,6 @@ pip install numpy scipy matplotlib
 If you just want to test the Python implementation of PRM and A*, go to the prm-manipulator folder using
 -  `cd Project5_Codes/prm-manipulator`
 
-
 Second, from the project root, execute the following:
 ```
 python3 main.py
