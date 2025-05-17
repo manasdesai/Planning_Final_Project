@@ -1,36 +1,17 @@
 #!/usr/bin/env python3
-
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-import numpy as np
 from std_msgs.msg import Float64MultiArray
+import numpy as np
 
 class ClosedLoopTrajectoryFollower(Node):
     def __init__(self):
-        super().__init__("closed_loop_trajectory_follower")
-        self.get_logger().info("Closed Loop Trajectory Follower Node Initialized")
+        super().__init__('closed_loop_trajectory_follower')
+        self.get_logger().info("Controller node up; waiting for /waypoints + /joint_states…")
 
-        # Subscribe to waypoints from the topic
-        self.waypoint_subscriber = self.create_subscription(
-            Float64MultiArray, "/waypoints", self.waypoint_callback, 10
-        )
-
-        # Publisher for sending joint trajectory commands
-        self.publisher_ = self.create_publisher(
-            JointTrajectory, "/joint_trajectory_controller/joint_trajectory", 10
-        )
-
-        # Joint states subscriber
-        self.subscriber_ = self.create_subscription(
-            JointState, "/joint_states", self.joint_state_callback, 10
-        )
-
-        # Control loop timer
-        self.timer = self.create_timer(0.1, self.control_loop)  # 10 Hz
-
-        # UR robot joint names
+        # State
         self.joint_names = [
             "shoulder_pan_joint",
             "shoulder_lift_joint",
@@ -39,81 +20,73 @@ class ClosedLoopTrajectoryFollower(Node):
             "wrist_2_joint",
             "wrist_3_joint",
         ]
-
-        # Controller parameters
-        self.kp = 5.0
-        self.tolerance = 0.05
-        self.current_position = np.zeros(len(self.joint_names))
+        self.current_position = np.zeros(6)
         self.joint_received = False
-        self.waypoints = []
-        self.current_target_index = 0
-        self.get_logger().info("Waiting for waypoints...")
+        self.waypoints = []           # list of 6‐float targets
+        self.waypoints_received = False
+        self.idx = 0                  # current waypoint index
+        self.kp = 5.0
+        self.tol = 0.05
 
-    def waypoint_callback(self, msg: Float64MultiArray):
-        # Convert the received flat list into waypoints
-        data = np.array(msg.data).reshape(-1, len(self.joint_names))
-        self.waypoints = data.tolist()
-        self.current_target_index = 0
-        self.get_logger().info(f"Received {len(self.waypoints)} waypoints.")
-        self.get_logger().info(f"First waypoint: {self.waypoints[0]}")
+        # Subs & pubs
+        self.create_subscription(Float64MultiArray, '/waypoints',
+                                 self.waypoint_cb, 10)
+        self.create_subscription(JointState, '/joint_states',
+                                 self.joint_state_cb, 10)
+        self.pub = self.create_publisher(
+            JointTrajectory,
+            '/joint_trajectory_controller/joint_trajectory',
+            10)
 
-    def joint_state_callback(self, msg: JointState):
-        # Update current joint positions
-        positions = dict(zip(msg.name, msg.position))
+        # start control loop
+        self.create_timer(0.1, self.control_loop)
+
+    def waypoint_cb(self, msg: Float64MultiArray):
+        flat = np.array(msg.data, dtype=float)
+        n = flat.size // 6
+        self.waypoints = flat.reshape(n, 6).tolist()
+        self.waypoints_received = True
+        self.idx = 0
+        self.get_logger().info(f"Loaded {n} waypoints from astar_node")
+
+    def joint_state_cb(self, msg: JointState):
+        m = {n:p for n,p in zip(msg.name, msg.position)}
         try:
-            self.current_position = np.array(
-                [positions[name] for name in self.joint_names]
-            )
+            self.current_position = np.array([m[j] for j in self.joint_names])
             self.joint_received = True
         except KeyError:
-            self.get_logger().warn("Joint state missing expected joint names")
+            self.get_logger().warn("Joint state missing some names")
 
     def control_loop(self):
-        if not self.joint_received:
-            self.get_logger().warn("Joint states not received yet")
+        if not (self.joint_received and self.waypoints_received):
             return
 
-        # Check if waypoints are available
-        if len(self.waypoints) == 0:
-            self.get_logger().warn("No waypoints received")
+        if self.idx >= len(self.waypoints):
+            self.get_logger().info("All waypoints reached.")
             return
 
-        # Check if all waypoints are processed
-        if self.current_target_index >= len(self.waypoints):
-            self.get_logger().info("All waypoints processed. Returning to home position.")
-            return
-
-        # Target waypoint
-        target = np.array(self.waypoints[self.current_target_index])
+        target = np.array(self.waypoints[self.idx])
         error = target - self.current_position
 
-        # Check if the current target waypoint is reached
-        if np.all(np.abs(error) < self.tolerance):
-            self.get_logger().info(
-                f"Reached waypoint {self.current_target_index + 1}/{len(self.waypoints)}"
-            )
-            self.current_target_index += 1
-            if self.current_target_index >= len(self.waypoints):
-                self.get_logger().info("All waypoints reached.")
-                return
-            target = np.array(self.waypoints[self.current_target_index])
+        # if within tolerance, advance index
+        if np.all(np.abs(error) < self.tol):
+            self.get_logger().info(f"Reached waypoint {self.idx+1}/{len(self.waypoints)}")
+            self.idx += 1
+            return
 
-        # Proportional control to calculate the next joint position
-        next_position = self.current_position + self.kp * error * 0.1  # dt = 0.1s
+        # P‐control step
+        delta = self.kp * error * 0.1
+        next_pos = (self.current_position + delta).tolist()
 
-        # Publish the next joint trajectory
-        traj_msg = JointTrajectory()
-        traj_msg.joint_names = self.joint_names
-        point = JointTrajectoryPoint()
-        point.positions = next_position.tolist()
-        point.time_from_start.sec = 1
-        traj_msg.points.append(point)
+        traj = JointTrajectory()
+        traj.joint_names = self.joint_names
+        pt = JointTrajectoryPoint()
+        pt.positions = next_pos
+        pt.time_from_start.sec = 1
+        traj.points.append(pt)
 
-        self.publisher_.publish(traj_msg)
-        self.get_logger().info(
-            f"Moving to waypoint {self.current_target_index + 1}: {target.round(3).tolist()}"
-        )
-
+        self.pub.publish(traj)
+        self.get_logger().info(f"Moving → wp {self.idx+1}: {list(np.round(target,3))}")
 
 def main(args=None):
     rclpy.init(args=args)
@@ -122,6 +95,5 @@ def main(args=None):
     node.destroy_node()
     rclpy.shutdown()
 
-
-if __name__ == "__main__":
+if __name__=='__main__':
     main()
