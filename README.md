@@ -15,7 +15,7 @@ If you just want to test the Python implementation of PRM and A*, go to the prm-
 
 Second, from the project root, execute the following:
 ```
-python main.py
+python3 main.py
 ```
 
 Third, examine the generated plots.
