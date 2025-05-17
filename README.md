@@ -7,8 +7,8 @@ Clone the packages using
 Build the packages using
 - `cd ~/project5_ws && colcon build --symlink-install`
   
-To launch the gazebo simulation, run
-- `ros2 launch robot_control gazebo.launch.py
+To launch the gazebo simulation, source the workspace and run
+- `ros2 launch robot_control gazebo.launch.py`
 
 Turn the physics off in Gazebo, and try to place the robot on the cafe table if not placed already.
 
