@@ -9,9 +9,9 @@ Python, NumPy, SciPy, Matplotlib
 ```
 pip install numpy scipy matplotlib 
 ```
-## Part1
+## Part 1
 If you just want to test the Python implementation of PRM and A*, go to the prm-manipulator folder using
--  `cd Project5_Codes/prm-manipulator`
+  - `cd Project5_Codes/prm-manipulator`
 
 Second, from the project root, execute the following:
 ```
@@ -20,11 +20,11 @@ python3 main.py
 
 Third, examine the generated plots.
 
-## Part2
+## Part 2
 To run the Gazebo simulation,
 
 Navigate to the project5_ws workspace
-`cd Project5_Codes/project5_ws/`
+- `cd Project5_Codes/project5_ws/`
   
 Build the packages using
 - `colcon build --symlink-install`
